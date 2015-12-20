@@ -14,22 +14,37 @@ library(gsubfn)
 library(kulife)
 library(foreign)
 
+
+loans_csv = TRUE;
+loans_path = "Data/banking-test-loans-public.csv"
+transaction_csv = TRUE;
+transaction_path = "Data/banking-transaction-test.csv";
+
+payment_order_csv = TRUE;
+payment_order_path= "Data/banking-test-payments.csv";
+
 #################
 #     Loans     #
 #################
-
 # Load
-loans            <- read.xlsx("Data/banking.xlsx", sheetIndex = 5)
+if(loans_csv){
+  loans <- read.csv(loans_path,header = TRUE) 
+} else {
+  loans <- read.xlsx(loans_path, sheetIndex = 5)
+}
 # Prefix ("Loan_")
 colnames(loans)  <- paste("Loan", colnames(loans), sep = "_");
-# Treat "Loan_Date" & "Loan_Status" (Good or Bad?)
-loans$Loan_date  <- as.Date(as.character(loans$Loan_date) , "%y%m%d")
+loans$Loan_date  <- as.character(loans$Loan_date); #Remove
+loans$Loan_date  <- ifelse( test = (nchar(loans$Loan_date) == 3) , paste("20000",loans$Loan_date,sep = "") , paste("2000",loans$Loan_date,sep = "")); #Remove
+loans$Loan_date  <- as.Date(as.character(loans$Loan_date) , "%Y%m%d") # Change Y to y
+
 
 loans$Loan_status     <- as.character(loans$Loan_status);
 loans$Loan_Goodness   <- loans$Loan_status
 loans$Loan_Goodness   <- ifelse(test = ( loans$Loan_Goodness == "C" )   ,"Good",loans$Loan_Goodness)
 loans$Loan_Goodness   <- ifelse(test = ( loans$Loan_Goodness == "A" )   ,"Good",loans$Loan_Goodness)
 loans$Loan_Goodness   <- ifelse(test = ( loans$Loan_Goodness == "Good" ),"Good","Bad")
+
 ##################
 #Loans - Accounts#
 ##################
@@ -69,6 +84,8 @@ loans$district_id <- NULL;
 #   Loading Clients   #
 #######################
 clients <- read.xlsx("Data/banking.xlsx", sheetIndex = 2);
+clients_ <- clients;
+clients <- clients;
 clients$birth_number <- as.character(clients$birth_number);
 clients$gender <- ifelse(is.na(as.numeric(strapplyc(clients$birth_number,"\\d{2}([5-9]\\d)\\d{2}"))), "M", "F");
 clients$birth_number <- ifelse(clients$gender == "F",paste(strapplyc(clients$birth_number,"^\\d{2}"),sprintf("%02d",(as.numeric(strapplyc(clients$birth_number,"\\d{2}([5-9]\\d)\\d{2}"))-50)),strapplyc(clients$birth_number,"\\d{2}$"),sep = ""),clients$birth_number);
@@ -118,8 +135,7 @@ remove(districts)
 ##################################
 #     Client - Loan -Cred Card   #
 ##################################
-clients <- merge(clients,loans,by.x = "Disposition_account_id",by.y = "Account_account_id");
-clients_ <- ddply(clients,"Disposition_account_id",.fun = function(clients){
+clients <- ddply(clients,"Disposition_account_id",.fun = function(clients){
   cards       <- subset(clients, clients$CreditCards_issued < clients$Loan_date);
   currentCard <- "NA";
   if(nrow(cards) > 0){
@@ -132,13 +148,21 @@ clients_ <- ddply(clients,"Disposition_account_id",.fun = function(clients){
     as.data.frame(c(subset(clients,clients$Disposition_type == "OWNER"), OwnerCreditCard_type = as.character(cards$CreditCards_type), Disponent_Gender = dispSex, OwnerCurrentCreditCard_type = currentCard))
   }
 },.progress='text');
+clients <- merge(clients,loans,by.x = "Disposition_account_id",by.y = "Account_account_id");
+
 remove(loans);
 clients$Loan_Client_Age <- as.numeric(difftime(clients$Loan_date,clients$Client_birth_date, units = "weeks")/52.25) 
 
 ########################
 #     Transactions     #
 ########################
-transactions  <- read.csv("Data/transaction.csv",TRUE,";");
+if(transaction_csv){
+   transactions <- read.csv(transaction_path,header = TRUE)
+} else {
+  transactions  <- read.csv(transaction_path,TRUE,";");  
+}
+clients_ <- clients;
+clients <- clients_;
 transactions$Date_Temp <- format(as.Date(as.character(transactions$date) , "%y%m%d"),"%y%m")
 transactions$date      <- as.Date(as.Date(as.character(transactions$date) , "%y%m%d"))
 colnames(transactions) <- paste("Transaction", colnames(transactions), sep = "_");
@@ -203,7 +227,11 @@ clients <- ddply(clients,"Loan_loan_id",.fun = function(loanSet){
 ################
 # Payment Order#
 ################
-payment_orders<- read.xlsx("Data/banking.xlsx", sheetIndex = 4)
+if(payment_order_csv){
+  payment_orders <- read.csv(payment_order_path,header = TRUE)
+} else {
+  payment_orders<- read.xlsx(payment_order_path, sheetIndex = 4)
+}
 colnames(payment_orders) <- paste("Orders", colnames(payment_orders), sep = "_");
 clients <- merge(clients,payment_orders,by.x = "Disposition_account_id",by.y = "Orders_account_id")
 remove(payment_orders);
@@ -222,7 +250,6 @@ clients$Disposition_account_id <- NULL;
 clients$Disposition_disp_id <- NULL;
 clients$Client_client_id <- NULL;
 clients$CreditCards_card_id <- NULL;
-clients$Loan_loan_id <-NULL;
 clients$Orders_order_id <- NULL;
 clients$Orders_bank_to <- NULL;
 clients$Orders_account_to <- NULL;
@@ -243,7 +270,7 @@ nrow(subset(clients,clients$Loan_Goodness == "Bad"))
 
 
 #######################
-#     Decriptive      #
+#     Decriptive DATA #
 #######################
 
 clients       <- read.xlsx("Data/banking.xlsx", sheetIndex = 2);
@@ -273,15 +300,17 @@ names(districts)[names(districts) == 'A15'] <- 'crimes_95';
 names(districts)[names(districts) == 'A16'] <- 'crimes_96';
 colnames(districts)    <- paste("District", colnames(districts), sep = "_");
 
+
 clients_ <- merge(clients,dispositions,by.x="Client_client_id"   ,by.y = "Disposition_client_id");
 clients_ <- merge(clients_,creditCards,by.x="Disposition_disp_id",by.y="CreditCard_disp_id", all = T);
 clients_ <- merge(clients_,loans,by.x="Disposition_account_id",by.y="Loans_account_id", all = T);
-clients_ <- merge(clients_,districts,"Disposition_disp_id",by.y="District_A1");
-clients_$Loans_amount <- ifelse(is.na(clients_$Loans_amount),0,clients_$Loans_amount);
+clients_ <- merge(clients_,districts,"Client_district_id",by.y="District_A1");
+
+clients_$Loans_amount   <- ifelse(is.na(clients_$Loans_amount),0,clients_$Loans_amount);
 clients_$Loans_duration <- ifelse(is.na(clients_$Loans_duration),0,clients_$Loans_duration);
 clients_$Loans_payments <- ifelse(is.na(clients_$Loans_payments),0,clients_$Loans_payments);
-clients_$hasCreditCard <- is.na(clients_$CreditCard_card_id);
-clients_$hasLoan       <- is.na(clients_$Loans_loan_id);
+clients_$hasCreditCard  <- is.na(clients_$CreditCard_card_id);
+clients_$hasLoan        <- is.na(clients_$Loans_loan_id);
 clients_$Disposition_disp_id <- NULL;
 clients_$Disposition_account_id <- NULL;
 clients_$Client_client_id <- NULL;
